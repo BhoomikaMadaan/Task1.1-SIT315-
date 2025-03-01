@@ -1,0 +1,101 @@
+
+#define PIR_SENSOR_PIN 2    // PIR Motion Sensor (Now on D2 for attachInterrupt)
+#define LED_PIN 13          // LED (Blink on Motion)
+
+#define TRIG_PIN 5          // Ultrasonic Sensor Trig Pin
+#define ECHO_PIN 6          // Ultrasonic Sensor Echo Pin
+#define TMP_SENSOR_PIN 7    // Temperature Sensor Pin
+
+volatile bool pirDetected = false;  // PIR Interrupt Flag
+volatile bool timerFlag = false;    // Timer Interrupt Flag
+
+// PIR Interrupt Service Routine (ISR)
+void pirISR() {
+    pirDetected = true;
+}
+
+// Timer ISR - Fires every 1 second
+ISR(TIMER1_COMPA_vect) {
+    timerFlag = true;
+}
+
+// Timer Interrupt Setup
+void setupTimerInterrupt() {
+    noInterrupts();
+    TCCR1A = 0;
+    TCCR1B = 0;
+    TCNT1 = 0;
+
+    OCR1A = 15624; // 1s interval (for 16MHz Arduino)
+    TCCR1B |= (1 << WGM12);
+    TCCR1B |= (1 << CS12) | (1 << CS10);
+    TIMSK1 |= (1 << OCIE1A);
+    interrupts();
+}
+
+// Function to measure distance using Ultrasonic Sensor
+float getDistance() {
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+    
+    long duration = pulseIn(ECHO_PIN, HIGH);
+    float distance = duration * 0.034 / 2;  // Convert to cm
+    return distance;
+}
+
+// Function to read temperature
+float getTemperature() {
+    int analogValue = analogRead(TMP_SENSOR_PIN);
+    float voltage = analogValue * (5.0 / 1023.0);
+    float temperature = (voltage - 0.5) * 100;  // Convert to °C
+    return temperature;
+}
+
+void setup() {
+    Serial.begin(9600);
+
+    pinMode(PIR_SENSOR_PIN, INPUT);
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+    pinMode(TMP_SENSOR_PIN, INPUT);
+
+    // Attach PIR Motion Sensor to External Interrupt on pin 2
+    attachInterrupt(digitalPinToInterrupt(PIR_SENSOR_PIN), pirISR, RISING);
+
+    // Initialize Timer Interrupt
+    setupTimerInterrupt();
+}
+
+void loop() {
+    // PIR Sensor Handling (Interrupt)
+    if (pirDetected) {
+        Serial.println("Motion Detected!");
+        digitalWrite(LED_PIN, HIGH);
+        delay(100);  // Keep LED on for 500ms
+        digitalWrite(LED_PIN, LOW);
+        pirDetected = false;
+    }
+
+    // Timer Interrupt Handling
+    if (timerFlag) {
+        Serial.println("Timer Interrupt Triggered!");
+        
+        // Read Distance and Temperature
+        float distance = getDistance();
+        float temperature = getTemperature();
+
+        Serial.print("Distance: ");
+        Serial.print(distance);
+        Serial.println(" cm");
+
+        Serial.print("Temperature: ");
+        Serial.print(temperature);
+        Serial.println(" °C");
+
+        timerFlag = false;
+    }
+}
